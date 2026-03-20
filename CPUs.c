@@ -261,6 +261,7 @@ void* SRTFcpu(void* param) {
 // Preempts the running process when a higher-priority (lower-
 // numbered) process is in the ready queue.
 // ============================================================
+//REMEMBER REQUE THING
 void* PPcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
@@ -298,15 +299,23 @@ void* PPcpu(void* param) {
         // If we have a process (carried over from a prior tick or just
         // selected above), burn one unit of its remaining CPU burst.
         if (p != NULL) {
-            if(p->priority == qPriority(&(svars->readyQ))){
+            
+            //need to figure out where this if statement goes (inside vs outside/after if ==)
+            if(p->priority > qGetPriority(&(svars->readyQ))){
+                
+                p->requeued = true;
 
+                qInsert(&(svars->readyQ), p);
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            }else{
+
+                //if(p->priority == qGetPriority(&(svars->readyQ))){
+                
                 p->burstRemaining--;
-            }
+                //}
                 //if priority value of current is a larger value than the lowest one in the queue <= lower means more priority
-                if(p->priority > qGetPriority(&(svars->readyQ))){
 
-                    //need to figure out where this if statement goes (inside vs outside/after if ==)
-                }
 
                 if (p->burstRemaining == 0) {
                     // Process is done — move it to finishedQ so main can
@@ -318,6 +327,7 @@ void* PPcpu(void* param) {
                     // CPU is now idle; it will select a new process next tick.
                     p = NULL;
                 }
+            }
         }
 
         sem_post(svars->mainSem);
