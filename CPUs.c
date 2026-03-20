@@ -225,14 +225,91 @@ void* NPPcpu(void* param) {
 // Runs a process for at most 'quantum' timesteps before requeuing
 // it; always selects from the head of the ready queue.
 // ============================================================
+//basically fifo + quantum - checker <- c2c carson titus
 void* RRcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    //doc stmt: c2c carson titus brought to my attention to use svars instead of (CpuParams*) param) to fix its declaration
+    int q = svars->quantum;
+    int qAA;
+
+    Process* p = NULL;  // TODO: uncomment when you implement this function
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
+
+        if(p != NULL){
+            //need to figure out where this if statement goes (inside vs outside/after if ==)
+            if(qAA == 0){
+                
+                p->requeued = true;
+
+                qInsert(&(svars->readyQ), p);
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            }
+        }
+
+        // ── Selection (only when idle) ───────────────────────────────────
+        // FIFO is non-preemptive: once a process is running (p != NULL) we
+        // never replace it mid-burst.  We only enter this block when the CPU
+        // has nothing to run.
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            // thread (or main inserting a new arrival) could touch it right now.
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            // Index 0 = head of the list = the process that has been waiting
+            // the longest (qInsert always appends to the tail, so the head is
+            // always the oldest arrival — that is the FIFO selection rule).
+            p = qRemove(&(svars->readyQ), 0);
+
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+                qAA = q;
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        // ── Execution: one unit of work ──────────────────────────────────
+        // If we have a process (carried over from a prior tick or just
+        // selected above), burn one unit of its remaining CPU burst.
+        if (p != NULL) {
+            /*
+            //need to figure out where this if statement goes (inside vs outside/after if ==)
+            if(p->priority > qGetPriority(&(svars->readyQ))){
+                
+                p->requeued = true;
+
+                qInsert(&(svars->readyQ), p);
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            } */
+
+            //if(p->priority == qGetPriority(&(svars->readyQ))){
+            
+            p->burstRemaining--;
+            //}
+            //if priority value of current is a larger value than the lowest one in the queue <= lower means more priority
+            qAA--;
+
+            if (p->burstRemaining == 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+                qAA = 0;
+            }
+        }
 
         sem_post(svars->mainSem);
     }
@@ -331,7 +408,7 @@ void* SRTFcpu(void* param) {
 // Preempts the running process when a higher-priority (lower-
 // numbered) process is in the ready queue.
 // ============================================================
-//REMEMBER REQUE THING => check -> select -> action 
+//REMEMBER REQUE THING => check -> select -> action <- carson titus
 void* PPcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
